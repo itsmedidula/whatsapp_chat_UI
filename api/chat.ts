@@ -46,7 +46,7 @@ export default async function handler(request: Request) {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://whatsapp-chat-wall.vercel.app", // Replace with your actual site URL
+        "HTTP-Referer": "https://ruwan-wijerathna.vercel.app", // Replace with your actual site URL
         "X-Title": "WhatsApp Chat Wall",
         "Content-Type": "application/json"
       },
