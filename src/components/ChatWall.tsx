@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessage, Message } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { OPENAI_API_KEY } from '../config';
 
 const INITIAL_MESSAGES: Message[] = [
   {
@@ -13,7 +14,36 @@ const INITIAL_MESSAGES: Message[] = [
   }
 ];
 
-// Constants moved to server-side
+// --- Simulation Data (Fallback) ---
+const TUITION_KEYWORDS = {
+  pricing: ['price', 'cost', 'fee', 'much', 'pay'],
+  subjects: ['subject', 'course', 'math', 'science', 'english', 'history'],
+  schedule: ['time', 'schedule', 'when', 'hour', 'open'],
+  location: ['where', 'location', 'place', 'address'],
+  enroll: ['join', 'sign', 'register', 'enroll']
+};
+
+const TUITION_RESPONSE = {
+  pricing: "Our fees are very affordable! \n• Primary: $100/month\n• Secondary: $150/month\n• Higher: $200/month\nDiscounts available for yearly payments!",
+  subjects: "We offer comprehensive tutoring in:\n• Mathematics\n• Science (Physics, Chemistry, Biology)\n• English Literature & Language\n• History & Geography",
+  schedule: "Classes are available:\n• Weekdays: 3:00 PM - 8:00 PM\n• Weekends: 9:00 AM - 5:00 PM\nFlexible slots are available upon request.",
+  location: "We are located at:\n123 Education Lane,\nKnowledge City, KC 45000.\n(Near the Central Library)",
+  enroll: "Great choice! You can enroll by visiting our center or filling out the form on our website at www.arenatuition.com/apply"
+};
+
+const DEFAULT_RESPONSE = "I'm here to help with any questions about Arena Tuition Classes! You can ask about our subjects, fees, schedule, or location.";
+
+function getSimulatedResponse(text: string): string {
+  const lowerText = text.toLowerCase();
+  
+  if (TUITION_KEYWORDS.pricing.some(k => lowerText.includes(k))) return TUITION_RESPONSE.pricing;
+  if (TUITION_KEYWORDS.subjects.some(k => lowerText.includes(k))) return TUITION_RESPONSE.subjects;
+  if (TUITION_KEYWORDS.schedule.some(k => lowerText.includes(k))) return TUITION_RESPONSE.schedule;
+  if (TUITION_KEYWORDS.location.some(k => lowerText.includes(k))) return TUITION_RESPONSE.location;
+  if (TUITION_KEYWORDS.enroll.some(k => lowerText.includes(k))) return TUITION_RESPONSE.enroll;
+  
+  return DEFAULT_RESPONSE;
+}
 
 export function ChatWall() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
@@ -42,13 +72,16 @@ export function ChatWall() {
     setMessages(updatedMessages);
     setIsTyping(true);
 
+    let botText = "";
+
     try {
-      // Convert messages to API format
+      // Convert messages to API format for the real request
       const apiMessages = updatedMessages.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
         content: msg.text
       }));
 
+      // Attempt to hit the API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -57,46 +90,90 @@ export function ChatWall() {
         body: JSON.stringify({ messages: apiMessages }),
       });
 
-      let botText = "Sorry, I'm having trouble connecting right now.";
-
       if (response.ok) {
+        // API Success
         const data = await response.json();
-        botText = data.choices?.[0]?.message?.content || botText;
+        botText = data.choices?.[0]?.message?.content || "I couldn't generate a response.";
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        if (errorData.error && errorData.error.includes('OPENROUTER_API_KEY')) {
-           botText = "⚠️ System Error: OPENROUTER_API_KEY is not set in Vercel environment variables.";
-        } else {
-           console.error("API Error:", errorData);
-           // Fallback for demo if API fails (e.g. locally without env vars)
-           botText = "⚠️ API Connection Failed. (Note: This requires a Vercel deployment with OPENROUTER_API_KEY set)."; 
-        }
+        throw new Error("Backend API failed");
       }
 
-      // Mark user message as read
-      setMessages(prev => prev.map(msg => msg.id === newUserMessage.id ? { ...msg, status: 'read' } : msg));
-
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: botText,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, botMessage]);
-
     } catch (error) {
-      console.error("Network Error:", error);
-      const errorMessage: Message = {
-         id: (Date.now() + 1).toString(),
-         text: "⚠️ Network Error. Please check your connection.",
-         sender: 'bot',
-         timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsTyping(false);
+      console.warn("Backend API unavailable, attempting client-side fallback...");
+      
+      try {
+        if (!OPENAI_API_KEY) throw new Error("No client-side key");
+
+        const systemPrompt = {
+          role: 'system',
+          content: `You are a helpful assistant for Arena Tuition Classes.
+          
+          Details:
+          - Available Subjects: Mathematics, Science, English
+          - Grades: 1st to 12th
+          
+          Fees Structure:
+          - Primary (1-5): $40/month
+          - Middle (6-8): $50/month
+          - High School (9-12): $70/month
+          
+          Location: 123 Education Lane, Knowledge City
+          Contact: +1 234 567 8900
+          
+          Instructions:
+          - Be polite and helpful.
+          - Keep responses concise, similar to WhatsApp messages.
+          - If asked about enrolling, guide them to visit the office.
+          - Use emojis occasionally.
+          `
+        };
+
+        const apiMessages = updatedMessages.map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+        }));
+
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            "model": "gpt-3.5-turbo",
+            "messages": [systemPrompt, ...apiMessages],
+          })
+        });
+
+        if (response.ok) {
+           const data = await response.json();
+           botText = data.choices?.[0]?.message?.content || "I couldn't generate a response.";
+        } else {
+           throw new Error("Client-side API failed");
+        }
+
+      } catch (fallbackError) {
+        console.warn("Client-side API failed, falling back to local simulation:", fallbackError);
+        // Final Fallback to simulation
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        botText = getSimulatedResponse(text);
+      }
     }
+
+    // Finalize Bot Message
+    
+    // Mark user message as read
+    setMessages(prev => prev.map(msg => msg.id === newUserMessage.id ? { ...msg, status: 'read' } : msg));
+
+    const botMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      text: botText,
+      sender: 'bot',
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, botMessage]);
+    setIsTyping(false);
   };
 
   return (
