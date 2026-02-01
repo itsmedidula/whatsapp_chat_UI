@@ -9,10 +9,10 @@ export default async function handler(request: Request) {
 
   try {
     const { messages } = await request.json();
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Missing OPENROUTER_API_KEY environment variable' }), {
+      return new Response(JSON.stringify({ error: 'Missing OPENAI_API_KEY environment variable' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -42,23 +42,21 @@ export default async function handler(request: Request) {
       `
     };
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://ruwan-wijerathna.vercel.app", // Replace with your actual site URL
-        "X-Title": "WhatsApp Chat Wall",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        "model": "openai/gpt-3.5-turbo", // or any other model available on OpenRouter
+        "model": "gpt-3.5-turbo",
         "messages": [systemPrompt, ...messages],
       })
     });
 
     if (!response.ok) {
        const errorText = await response.text();
-       return new Response(JSON.stringify({ error: 'OpenRouter API error', details: errorText }), {
+       return new Response(JSON.stringify({ error: 'OpenAI API error', details: errorText }), {
          status: response.status,
          headers: { 'Content-Type': 'application/json' }
        });
